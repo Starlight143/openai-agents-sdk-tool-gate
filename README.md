@@ -80,9 +80,8 @@ Agent WITH Stage0:
 ### Installation
 
 ```bash
-# Clone or download this example
-# Replace <YOUR_ORG> with your GitHub username or organization
-git clone https://github.com/<YOUR_ORG>/openai-agents-sdk-tool-gate.git
+# Clone this repository
+git clone https://github.com/Starlight143/openai-agents-sdk-tool-gate.git
 cd openai-agents-sdk-tool-gate
 
 # Create virtual environment
