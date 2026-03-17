@@ -1,0 +1,6 @@
+# Stage0 API Client
+requests>=2.28.0
+python-dotenv>=1.0.0
+
+# OpenAI Agents SDK (optional - for actual integration)
+# pip install openai-agents
