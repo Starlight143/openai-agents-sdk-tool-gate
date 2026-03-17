@@ -204,9 +204,20 @@ def run_defer_example():
     elif response.verdict == Verdict.DENY:
         print()
         print("ACTION: BLOCKED - Tool call denied by Stage0")
-    else:
+        if response.defer_questions:
+            print()
+            print("Questions to consider:")
+            for question in response.defer_questions:
+                print(f"  - {question}")
+    elif response.verdict == Verdict.ALLOW:
         print()
-        print(f"UNEXPECTED: Got {response.verdict.value} instead of DEFER")
+        print("ACTION: ALLOWED - but review the clarifying questions")
+        print("Note: DEFER behavior depends on policy configuration and plan.")
+        if response.defer_questions:
+            print()
+            print("Clarifying questions from Stage0:")
+            for question in response.defer_questions:
+                print(f"  - {question}")
 
     return response
 

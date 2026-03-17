@@ -206,20 +206,20 @@ Calling Stage0 /check...
 Stage0 Response
 ======================================================================
 
-  Verdict:        DEFER
-  Decision:       DEFER
-  Reason:         Loop threshold reached - human checkpoint required
+  Verdict:        ALLOW or DEFER
+  Decision:       GO or DEFER
+  Reason:         Review clarifying questions before continuing
   Request ID:     req_ghi789rst
-  Policy Version: 2024.01.01
+  Policy Version: stage0-policy-pack@0.1.0
 
-  Context indicators:
-    - current_iteration: 5 (exceeds threshold)
-    - elapsed_seconds: 180s
-    - cumulative_cost_usd: $1.25
+  Clarifying Questions:
+    - What hard constraints must never be violated?
 
-ACTION: DEFERRED - Human checkpoint required
-The agent should NOT continue retrying autonomously.
+ACTION: Review clarifying questions before continuing
+The agent should consider human checkpoint for loop scenarios.
 ```
+
+**Note**: DEFER verdict depends on policy configuration and plan. Free tier may return ALLOW with clarifying questions instead of DEFER.
 
 ---
 
