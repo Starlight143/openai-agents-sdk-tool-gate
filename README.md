@@ -353,14 +353,12 @@ openai-agents-sdk-tool-gate/
 
 ## Other Framework Quickstarts
 
-SignalPulse provides quickstart examples for all major agent frameworks:
+SignalPulse provides quickstart examples for major agent frameworks:
 
 | Framework | Repository |
 |-----------|------------|
 | OpenAI Agents SDK | This repo |
-| LangGraph | [langgraph-tool-gate](https://github.com/signalpulse-org/langgraph-tool-gate) |
-| MCP (Model Context Protocol) | [mcp-tool-gate](https://github.com/signalpulse-org/mcp-tool-gate) |
-| Custom/General | [stage0-agent-runtime-guard](https://github.com/signalpulse-org/stage0-agent-runtime-guard) |
+| Custom/General | [stage0-agent-runtime-guard](https://github.com/Starlight143/stage0-agent-runtime-guard) |
 
 ---
 
@@ -382,8 +380,7 @@ STAGE0_BASE_URL=https://api.signalpulse.org
 ## Support
 
 - Documentation: [signalpulse.org/docs](https://signalpulse.org/docs)
-- API Reference: [signalpulse.org/api](https://signalpulse.org/api)
-- Issues: [GitHub Issues](https://github.com/signalpulse-org/openai-agents-sdk-tool-gate/issues)
+- Issues: [GitHub Issues](https://github.com/Starlight143/openai-agents-sdk-tool-gate/issues)
 
 ---
 
