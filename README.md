@@ -268,6 +268,45 @@ STAGE0_BASE_URL=https://api.signalpulse.org
 
 ---
 
+## Version Stability
+
+This project follows [Semantic Versioning](https://semver.org/). The current version is **1.0.0**.
+
+### What to Pin
+
+When using this repository as a reference or dependency:
+
+```bash
+# Clone a specific release
+git clone --branch v1.0.0 https://github.com/Starlight143/openai-agents-sdk-tool-gate.git
+
+# Or use a specific commit
+git clone https://github.com/Starlight143/openai-agents-sdk-tool-gate.git
+cd openai-agents-sdk-tool-gate
+git checkout v1.0.0
+```
+
+### Stability Guarantees
+
+| Component | Stability | Notes |
+|-----------|-----------|-------|
+| `Stage0GateHooks` | **Stable** | Public API locked for v1.x |
+| `Stage0BlockedError` | **Stable** | Exception interface locked |
+| `create_protected_agent()` | **Stable** | Factory function locked |
+| Tool definitions | **Stable** | 6 tools with fixed side effects |
+| `TOOL_SIDE_EFFECTS` | **Stable** | Registry format locked |
+| Tracing helpers | **Stable** | `trace_stage0_decision()` locked |
+
+### Breaking Changes Policy
+
+- **Major version** (v2.0.0): Breaking changes to public APIs
+- **Minor version** (v1.1.0): New features, backwards compatible
+- **Patch version** (v1.0.1): Bug fixes, backwards compatible
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+---
+
 ## License
 
 See [LICENSE](LICENSE) for details.
