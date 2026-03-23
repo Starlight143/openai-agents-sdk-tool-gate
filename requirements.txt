@@ -2,5 +2,9 @@
 requests>=2.28.0
 python-dotenv>=1.0.0
 
-# OpenAI Agents SDK (optional - for actual integration)
-# pip install openai-agents
+# OpenAI Agents SDK
+openai-agents>=0.0.2
+
+# Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0

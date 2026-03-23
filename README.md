@@ -1,333 +1,175 @@
 # Stage0 Tool Gate for OpenAI Agents SDK
 
-A minimal, production-ready example showing how to integrate [SignalPulse Stage0](https://signalpulse.org) runtime policy validation into your OpenAI Agents SDK project.
+A production-ready integration demonstrating how to protect AI agents built with OpenAI Agents SDK using Stage0 runtime policy validation.
 
-**Target audience**: Developers building AI agents who need to prevent autonomous agents from executing dangerous actions without approval.
-
----
-
-## Problem Scenario
-
-Your AI agent can helpfully research, analyze, and draft content. But what happens when it tries to:
-
-- **Deploy** to production without approval
-- **Publish** customer-facing content without review
-- **Execute** shell commands that modify state
-- **Keep retrying** a failing action indefinitely
-
-Without a runtime guard, these actions execute silently. With Stage0, every execution intent is validated **before** the action happens.
-
-### The Risk
-
-```
-User: "Help me investigate the production incident"
-
-Agent WITHOUT Stage0:
-1. [RESEARCH] Gather logs... ✓
-2. [ANALYSIS] Identify root cause... ✓
-3. [OUTPUT] Draft fix plan... ✓
-4. [ACTION] Deploy hotfix to production... ✗ ALREADY EXECUTED
-
-Agent WITH Stage0:
-1. [RESEARCH] Gather logs... ✓ ALLOWED
-2. [ANALYSIS] Identify root cause... ✓ ALLOWED
-3. [OUTPUT] Draft fix plan... ✓ ALLOWED
-4. [ACTION] Deploy hotfix to production... ✗ BLOCKED by Stage0
-   Reason: SIDE_EFFECTS_NEED_GUARDRAILS - deploy requires approval
-```
+**Clone-and-run quality**: Developers can see safe tools pass, dangerous tools get blocked, and Stage0 decisions logged to traces.
 
 ---
 
-## Where Stage0 Sits (Architecture)
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Your AI Agent                          │
-│  (OpenAI Agents SDK, LangGraph, custom agent, etc.)        │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              │ Before every tool call
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Stage0 /check API                        │
-│  (https://api.signalpulse.org)                              │
-│                                                             │
-│  Input: goal, tools, side_effects, context                  │
-│  Output: verdict (ALLOW/DENY/DEFER), reason, request_id     │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                    ┌─────────┴─────────┐
-                    │                   │
-              ALLOW │                   │ DENY/DEFER
-                    ▼                   ▼
-           ┌───────────────┐    ┌──────────────────┐
-           │ Execute Tool  │    │ Block Execution  │
-           │ Call          │    │ Log & Escalate   │
-           └───────────────┘    └──────────────────┘
-```
-
-**Key principle**: Stage0 is NOT part of your agent. The agent cannot self-approve. All execution intent MUST be validated via external `/check` call.
-
----
-
-## Quick Start (10-15 minutes)
-
-### Prerequisites
-
-- Python 3.10 or newer
-- A Stage0 API key from [signalpulse.org](https://signalpulse.org)
-
-### Installation
+## Quick Start
 
 ```bash
-# Clone this repository
+# Clone and setup
 git clone https://github.com/Starlight143/openai-agents-sdk-tool-gate.git
 cd openai-agents-sdk-tool-gate
 
-# Create virtual environment
 python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # macOS/Linux
 
-# Activate (Windows)
-venv\Scripts\activate
-
-# Activate (macOS/Linux)
-source venv/bin/activate
-
-# Install dependencies
 pip install -r requirements.txt
 
-# Configure your API key
+# Configure API key (optional - mock mode works without it)
 cp .env.example .env
 # Edit .env and add your STAGE0_API_KEY
+
+# Run the demo
+python run_demo.py --mock
 ```
 
-### Run the Demo
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Your Application                         │
+├─────────────────────────────────────────────────────────────────┤
+│  run_demo.py                                                     │
+│      │                                                           │
+│      ▼                                                           │
+│  ┌─────────────┐    hooks=Stage0GateHooks(client)               │
+│  │   Runner    │────────────────────────────────┐               │
+│  │  .run()     │                                 │               │
+│  └──────┬──────┘                                 │               │
+│         │                                        │               │
+│         ▼                                        ▼               │
+│  ┌─────────────┐    on_tool_start()    ┌─────────────────┐      │
+│  │    Agent    │──────────────────────▶│ Stage0GateHooks │      │
+│  │  (tools=[]) │                       └────────┬────────┘      │
+│  └──────┬──────┘                                │               │
+│         │                                       ▼               │
+│         │                              ┌─────────────────┐      │
+│         │                              │  Stage0 /check  │      │
+│         │                              │  (API call)     │      │
+│         │                              └────────┬────────┘      │
+│         │                                       │               │
+│         │                    ┌──────────────────┼───────────┐   │
+│         │                    │                  │           │   │
+│         │              ALLOW │            DENY  │     DEFER │   │
+│         │                    ▼                  ▼           ▼   │
+│         │            ┌─────────────┐    ┌─────────────┐  ...    │
+│         │            │ Execute     │    │ Raise       │         │
+│         │            │ Tool        │    │ BlockedError│         │
+│         │            └─────────────┘    └─────────────┘         │
+│         │                    │                                   │
+│         ▼                    ▼                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │                    Tracing (custom_span)                 │    │
+│  │  - tool_name, verdict, request_id, policy_version        │    │
+│  └─────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Key Integration Points
+
+### 1. Tools with Side Effect Declarations
+
+```python
+from agents import function_tool
+from app.tools import TOOL_SIDE_EFFECTS
+
+@function_tool
+def dangerous_delete(file_path: str) -> str:
+    """Delete a file - HIGH RISK operation."""
+    return f"Deleted: {file_path}"
+
+# Declare side effects for Stage0 validation
+TOOL_SIDE_EFFECTS["dangerous_delete"] = ["data_deletion", "filesystem_modification"]
+```
+
+### 2. RunHooks for Tool Interception
+
+```python
+from agents import Agent, Runner
+from app.stage0_hooks import Stage0GateHooks
+from stage0 import Stage0Client
+
+client = Stage0Client()
+hooks = Stage0GateHooks(client)
+
+agent = Agent(name="ProtectedAgent", tools=[...])
+
+# Stage0 validates BEFORE each tool call
+result = await Runner.run(agent, "Delete temp.log", hooks=hooks)
+```
+
+### 3. Tracing Integration
+
+```python
+from app.tracing import trace_stage0_decision
+
+# Automatically called by Stage0GateHooks
+# Records in OpenAI Agents SDK trace:
+# - tool_name
+# - verdict (ALLOW/DENY/DEFER)
+# - request_id
+# - policy_version
+```
+
+---
+
+## Demo Scenarios
 
 ```bash
-# Run all examples (interactive mode)
-python run_demo.py
+# Run hooks demo (no OpenAI key needed, uses mock Stage0)
+python run_demo.py --hooks-only --mock --scenario all
 
-# Run all examples without prompts (for CI, recordings)
-python run_demo.py --auto
+# Run specific scenario
+python run_demo.py --hooks-only --mock --scenario allow   # Safe lookup - ALLOWED
+python run_demo.py --hooks-only --mock --scenario deny    # Dangerous delete - DENIED
+python run_demo.py --hooks-only --mock --scenario defer   # Approval required - DEFERRED
 
-# Run specific example
-python run_demo.py --example deny
+# Run with live Stage0 API (requires STAGE0_API_KEY)
+python run_demo.py --hooks-only --scenario all
 
-# Run ALLOW example only
-python run_demo.py --example allow
-
-# Run DEFER example only
-python run_demo.py --example defer
+# Run full agent demo (requires OPENAI_API_KEY)
+python run_demo.py --mock --scenario all
 ```
 
----
-
-## Expected Output
-
-### ALLOW Example (Safe Informational Query)
+### Expected Output
 
 ```
 ======================================================================
-EXAMPLE: ALLOW Scenario - Safe Informational Query
+  Scenario: ALLOW - Safe informational query
 ======================================================================
 
-Goal: Search for Python web framework documentation
-Tools: web_search
-Side effects: None
-Constraints: informational only, no side effects
+Input: Search for documentation about Python async programming
+Expected: ALLOW
 
-Calling Stage0 /check...
+Calling Stage0...
+
+RESULT: Tool executed successfully
+Output: Result 1: Documentation about 'Python async programming'...
+
+Verdict: ALLOW (Expected: ALLOW)
 
 ======================================================================
-Stage0 Response
+  Scenario: DENY - Dangerous operation
 ======================================================================
 
-  Verdict:        ALLOW
-  Decision:       GO
-  Reason:         Informational query with no side effects
-  Request ID:     req_abc123xyz
-  Policy Version: 2024.01.01
-  Risk Score:     0
-  High Risk:      False
+Input: Delete the file /tmp/old_logs.txt
+Expected: DENY
 
-ACTION: Execute the tool call
-The agent can now safely search for documentation.
+Calling Stage0...
+
+RESULT: Tool execution BLOCKED by Stage0
+Error: Stage0 DENY: Tool 'dangerous_delete' blocked...
+
+Verdict: DENY (Expected: DENY)
 ```
-
-### DENY Example (Dangerous Deployment)
-
-```
-======================================================================
-EXAMPLE: DENY Scenario - Dangerous Deployment Action
-======================================================================
-
-Goal: Deploy a hotfix to production API gateway immediately
-Tools: shell, kubectl
-Side effects: deploy (HIGH RISK)
-Context: No approval, production environment, automated request
-
-Calling Stage0 /check...
-
-======================================================================
-Stage0 Response
-======================================================================
-
-  Verdict:        DENY
-  Decision:       NO_GO
-  Reason:         HIGH severity: SIDE_EFFECTS_NEED_GUARDRAILS
-  Request ID:     req_def456uvw
-  Policy Version: 2024.01.01
-  Risk Score:     85
-  High Risk:      True
-
-  Issues:
-    [HIGH] SIDE_EFFECTS_NEED_GUARDRAILS: Deploy side effect requires approval
-    [HIGH] MISSING_APPROVAL: Production deployment requires human approval
-
-ACTION: BLOCKED - Tool call denied by Stage0
-The agent MUST NOT execute this deployment.
-```
-
-### DEFER Example (Loop Guard)
-
-```
-======================================================================
-EXAMPLE: DEFER Scenario - Agent Loop Guard
-======================================================================
-
-Goal: Continue autonomous retries until the workflow succeeds
-Tools: shell, recovery_script
-Side effects: loop (repeated execution)
-Context: Multiple retries already attempted, cost increasing
-
-Calling Stage0 /check...
-
-======================================================================
-Stage0 Response
-======================================================================
-
-  Verdict:        ALLOW or DEFER
-  Decision:       GO or DEFER
-  Reason:         Review clarifying questions before continuing
-  Request ID:     req_ghi789rst
-  Policy Version: stage0-policy-pack@0.1.0
-
-  Clarifying Questions:
-    - What hard constraints must never be violated?
-
-ACTION: Review clarifying questions before continuing
-The agent should consider human checkpoint for loop scenarios.
-```
-
-**Note**: DEFER verdict depends on policy configuration and plan. Free tier may return ALLOW with clarifying questions instead of DEFER.
-
----
-
-## Where to Find request_id and policy_version
-
-These critical audit fields are in **every** Stage0 response:
-
-```python
-response = client.check_goal(...)
-
-# Unique identifier for this request - store in your logs
-print(f"request_id: {response.request_id}")
-# Output: request_id: req_abc123xyz
-
-# Which policy version made the decision - for audit trail
-print(f"policy_version: {response.policy_version}")
-# Output: policy_version: 2024.01.01
-
-# Also available as policy_pack_version
-print(f"policy_pack_version: {response.policy_pack_version}")
-```
-
-**Best practice**: Log `request_id` and `policy_version` with every tool call for audit traceability.
-
----
-
-## Integration Code
-
-The minimal integration pattern:
-
-```python
-from stage0 import Stage0Client, Verdict
-
-# Initialize client (reads STAGE0_API_KEY from environment)
-client = Stage0Client()
-
-# Before executing any tool call with potential side effects
-response = client.check_goal(
-    goal="Deploy the hotfix to production",
-    tools=["shell", "kubectl"],
-    side_effects=["deploy"],  # Be honest about risks
-    context={
-        "environment": "production",
-        "approval_status": "pending",
-        "actor_role": "incident_bot",
-    },
-)
-
-# Check the verdict
-if response.verdict == Verdict.ALLOW:
-    # Safe to execute
-    result = execute_tool_call()
-elif response.verdict == Verdict.DEFER:
-    # Need human review
-    request_human_approval(response.defer_questions)
-else:  # DENY
-    # Block and log
-    log_blocked_action(
-        request_id=response.request_id,
-        reason=response.reason,
-        policy_version=response.policy_version,
-    )
-```
-
----
-
-## Request/Response Contract
-
-### Request Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `goal` | string | What you're trying to accomplish |
-| `success_criteria` | string[] | What success looks like |
-| `constraints` | string[] | Any constraints to apply |
-| `tools` | string[] | Tools you plan to use |
-| `side_effects` | string[] | Potential side effects (deploy, publish, etc.) |
-| `context` | object | Runtime context (environment, approval, etc.) |
-
-### Response Fields
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `verdict` | enum | **The action gate**: ALLOW, DENY, or DEFER |
-| `decision` | enum | Decision posture: GO, NO_GO, DEFER, ERROR |
-| `reason` | string | Why this decision was made |
-| `request_id` | string | **Unique ID** - log this for audits |
-| `policy_version` | string | **Policy version** - for audit trail |
-| `risk_score` | int | Risk score (0-100) |
-| `high_risk` | bool | Whether this is considered high risk |
-| `issues` | array | List of detected issues with severity |
-
----
-
-## Common Side Effects to Declare
-
-When calling Stage0, be honest about potential side effects:
-
-| Side Effect | When to Use |
-|-------------|-------------|
-| `deploy` | Deploying code, containers, or infrastructure |
-| `publish` | Publishing content, posts, or public statements |
-| `send_email` | Sending emails or notifications |
-| `payment` | Processing payments or refunds |
-| `data_modification` | Modifying database records |
-| `external_api` | Calling external APIs that may have side effects |
-| `loop` | Repeated execution or retry loops |
-| `shell` | Executing shell commands |
 
 ---
 
@@ -335,51 +177,94 @@ When calling Stage0, be honest about potential side effects:
 
 ```
 openai-agents-sdk-tool-gate/
-├── README.md           # This file
-├── .env.example        # Environment template
-├── requirements.txt    # Python dependencies
-├── run_demo.py         # Main entry point
+├── app/
+│   ├── __init__.py           # Module exports
+│   ├── tools.py              # @function_tool definitions with side effects
+│   ├── stage0_hooks.py       # RunHooks implementation for Stage0
+│   ├── tracing.py            # custom_span helpers for decision logging
+│   └── agent.py              # Agent factory functions
 ├── stage0/
 │   ├── __init__.py
-│   └── client.py       # Stage0 API client
-└── examples/
-    ├── __init__.py
-    ├── allow_example.py    # ALLOW scenario
-    └── deny_example.py     # DENY/DEFER scenarios
+│   └── client.py             # Stage0 API client
+├── tests/
+│   ├── conftest.py           # Pytest fixtures
+│   ├── test_safe_tool_allowed.py
+│   ├── test_risky_tool_denied.py
+│   ├── test_defer_path.py
+│   └── test_mock_mode.py
+├── examples/                  # Legacy examples (direct API)
+├── run_demo.py               # Main demo entry point
+├── requirements.txt
+├── .env.example
+└── README.md
 ```
 
 ---
 
-## Other Framework Quickstarts
+## Tool Categories
 
-SignalPulse provides quickstart examples for major agent frameworks:
+| Category | Tools | Stage0 Verdict | Side Effects |
+|----------|-------|----------------|--------------|
+| **Safe** | `safe_lookup`, `get_system_status` | ALLOW | None |
+| **Dangerous** | `dangerous_delete`, `deploy_to_production`, `send_notification` | DENY | data_deletion, deploy, etc. |
+| **Approval Required** | `approval_required_action` | DEFER | requires_approval |
 
-| Framework | Repository |
-|-----------|------------|
-| OpenAI Agents SDK | This repo |
-| Custom/General | [stage0-agent-runtime-guard](https://github.com/Starlight143/stage0-agent-runtime-guard) |
+---
+
+## Testing
+
+```bash
+# Run all tests
+pytest tests/ -v
+
+# Run specific test file
+pytest tests/test_risky_tool_denied.py -v
+
+# Run with coverage
+pytest tests/ --cov=app --cov=stage0
+```
+
+---
+
+## Key Concepts
+
+### Why RunHooks?
+
+OpenAI Agents SDK provides `RunHooks` as the official way to intercept lifecycle events. The `on_tool_start` callback fires BEFORE tool execution, making it the perfect integration point for Stage0 validation.
+
+### Why Not Wrap Tools Individually?
+
+You could wrap each tool function, but that:
+1. Requires modifying every tool
+2. Easy to forget on new tools
+3. Duplicates validation logic
+
+`RunHooks` provides centralized, consistent protection across all tools.
+
+### What Gets Traced?
+
+Every Stage0 decision is recorded in the trace with:
+- `tool_name`: Which tool was checked
+- `verdict`: ALLOW/DENY/DEFER
+- `request_id`: For audit trail
+- `policy_version`: Which policy made the decision
+- `risk_score`: Risk assessment
+
+View traces at https://platform.openai.com/traces
 
 ---
 
 ## Get Your API Key
 
 1. Visit [signalpulse.org](https://signalpulse.org)
-2. Create an account
-3. Subscribe to a plan (free tier available)
-4. Generate an API key
-5. Add it to your `.env` file:
+2. Create an account (free tier available)
+3. Generate an API key
+4. Add to `.env`:
 
 ```env
 STAGE0_API_KEY=your_api_key_here
 STAGE0_BASE_URL=https://api.signalpulse.org
 ```
-
----
-
-## Support
-
-- Documentation: [signalpulse.org/docs](https://signalpulse.org/docs)
-- Issues: [GitHub Issues](https://github.com/Starlight143/openai-agents-sdk-tool-gate/issues)
 
 ---
 
